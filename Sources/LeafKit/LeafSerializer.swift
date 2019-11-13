@@ -1,3 +1,5 @@
+import Vapor
+
 var customTags: [String: LeafTag] = [
     "lowercased": Lowercased(),
 ]
@@ -7,12 +9,14 @@ struct LeafSerializer {
     private var offset: Int
     private var buffer: ByteBuffer
     private var data: [String: LeafData]
+    private let application: Application
     
-    init(ast: [Syntax], context: [String: LeafData]) {
+    init(ast: [Syntax], context: [String: LeafData], application: Application) {
         self.ast = ast
         self.offset = 0
         self.buffer = ByteBufferAllocator().buffer(capacity: 0)
         self.data = context
+        self.application = application
     }
     
     mutating func serialize() throws -> ByteBuffer {
@@ -44,7 +48,7 @@ struct LeafSerializer {
     }
 
     mutating func serialize(expression: [ParameterDeclaration]) throws {
-        let resolver = ParameterResolver(params: [.expression(expression)], data: data)
+        let resolver = ParameterResolver(params: [.expression(expression)], data: data, application: application)
         let resolved = try resolver.resolve()
         guard resolved.count == 1 else { throw "expressions should resolve to single value" }
         let data = resolved[0].result
@@ -67,7 +71,7 @@ struct LeafSerializer {
             return
         }
         
-        let resolver = ParameterResolver(params: list, data: data)
+        let resolver = ParameterResolver(params: list, data: data, application: application)
         let satisfied = try resolver.resolve().map { $0.result.bool ?? false } .reduce(false) { $0 || $1 }
         if satisfied {
             try serialize(body: conditional.body)
@@ -77,8 +81,9 @@ struct LeafSerializer {
     }
     
     mutating func serialize(_ tag: Syntax.CustomTagDeclaration) throws {
-        let sub = LeafContext(params: tag.params, data: data, body: tag.body)
-        let rendered = try customTags[tag.name]?.render(sub)
+        let sub = LeafContext(params: tag.params, data: data, body: tag.body, application: application)
+        let tags = application.make(LeafConfig.self).customTags
+        let rendered = try tags[tag.name]?.render(sub)
             ?? .init(.null)
         serialize(rendered)
     }
@@ -100,7 +105,7 @@ struct LeafSerializer {
     }
     
     mutating func serialize(_ loop: Syntax.Loop) throws {
-        guard let array = data[loop.array]?.array else { throw "expected array at key: \(loop.array)" }
+        guard let array = data[keyPath: loop.array]?.array else { throw "expected array at key: \(loop.array)" }
         for (idx, item) in array.enumerated() {
             var innerContext = self.data
             
@@ -108,7 +113,7 @@ struct LeafSerializer {
             else if idx == array.count - 1 { innerContext["isLast"] = .bool(true) }
             innerContext[loop.item] = item
             
-            var serializer = LeafSerializer(ast: loop.body, context: innerContext)
+            var serializer = LeafSerializer(ast: loop.body, context: innerContext, application: application)
             var loopBody = try serializer.serialize()
             self.buffer.writeBuffer(&loopBody)
         }

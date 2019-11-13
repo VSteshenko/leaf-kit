@@ -1,8 +1,9 @@
 import Foundation
+import Vapor
 
-struct ResolvedParameter {
-    let param: ParameterDeclaration
-    let result: LeafData
+public struct ResolvedParameter {
+    public let param: ParameterDeclaration
+    public let result: LeafData
 }
 
 extension Dictionary where Key == String, Value == LeafData {
@@ -29,11 +30,21 @@ extension ParameterDeclaration {
         return o
     }
 }
+
+extension LeafContext {
+    public func resolve() throws -> [ResolvedParameter] {
+        let resolver = ParameterResolver(params: self.params, data: self.data, application: self.application)
+        let resolved = try resolver.resolve()
+        return resolved
+    }
+}
+
 struct ParameterResolver {
     let params: [ParameterDeclaration]
     let data: [String: LeafData]
+    let application: Application
     
-    func resolve() throws -> [ResolvedParameter] {
+    public func resolve() throws -> [ResolvedParameter] {
         return try params.map(resolve)
     }
     
@@ -45,8 +56,9 @@ struct ParameterResolver {
         case .parameter(let p):
             result = try resolve(param: p)
         case .tag(let t):
-            let ctx = LeafContext(params: t.params, data: data, body: t.body)
-            result = try customTags[t.name]?.render(ctx)
+            let ctx = LeafContext(params: t.params, data: data, body: t.body, application: application)
+            let tags = application.make(LeafConfig.self).customTags
+            result = try tags[t.name]?.render(ctx)
                 ?? .init(.null)
         }
         return .init(param: param, result: result)
@@ -98,6 +110,20 @@ struct ParameterResolver {
             let lhs = try resolve(expression[0]).result
             let functor = expression[1]
             let rhs = try resolve(expression[2]).result
+            guard case .parameter(let p) = functor else { throw "expected keyword or operator" }
+            switch p {
+            case .keyword(let k):
+                return try resolve(lhs: lhs, key: k, rhs: rhs)
+            case .operator(let o):
+                return try resolve(lhs: lhs, op: o, rhs: rhs)
+            default:
+                throw "unexpected parameter: \(p)"
+            }
+        } else if let op = expression[0].operator() {
+            let oprhs = try resolve(expression[1]).result
+            let lhs = try resolve(op: op, rhs: oprhs)
+            let functor = expression[2]
+            let rhs = try resolve(expression[3]).result
             guard case .parameter(let p) = functor else { throw "expected keyword or operator" }
             switch p {
             case .keyword(let k):

@@ -1,8 +1,12 @@
+import Vapor
+
 public struct LeafConfig {
     public var rootDirectory: String
+    public var customTags: [String: LeafTag]
     
     public init(rootDirectory: String) {
         self.rootDirectory = rootDirectory
+        self.customTags = ["lowercased": Lowercased()]
     }
 }
 
@@ -25,6 +29,12 @@ public struct LeafContext {
     let params: [ParameterDeclaration]
     let data: [String: LeafData]
     let body: [Syntax]?
+    
+    public let application: Application
+
+    public subscript(key: String) -> LeafData? {
+        return data[key]
+    }
 }
 
 public protocol LeafTag {
@@ -33,29 +43,43 @@ public protocol LeafTag {
 
 struct Lowercased: LeafTag {
     func render(_ ctx: LeafContext) throws -> LeafData {
-        let resolver = ParameterResolver(params: ctx.params, data: ctx.data)
-        let resolved = try resolver.resolve()
+        let resolved = try ctx.resolve()
         guard let str = resolved.first?.result.string else { throw "unable to lowercase unexpected data" }
         return .init(.string(str.lowercased()))
     }
 }
 
-public final class LeafRenderer {
+public class LeafRenderer {
     let config: LeafConfig
     let file: NonBlockingFileIO
-    public let eventLoop: EventLoop
-    
+    public let application: Application
+
+    public var eventLoopPreference: LeafEventLoopPreference
+    public let eventLoopGroup: EventLoopGroup
+    public var eventLoop: EventLoop {
+        switch eventLoopPreference {
+        case let .delegate(on: eventLoop):
+            return eventLoop
+        default:
+            return eventLoopGroup.next()
+        }
+    }
+
     // TODO: More Cache Options
     let cache: LeafCache = Cache()
     
     public init(
         config: LeafConfig,
         threadPool: NIOThreadPool,
-        eventLoop: EventLoop
+        application: Application,
+        eventLoopGroup: EventLoopGroup,
+        eventLoopPreference: LeafEventLoopPreference = .indifferent
     ) {
         self.config = config
         self.file = .init(threadPool: threadPool)
-        self.eventLoop = eventLoop
+        self.application = application
+        self.eventLoopGroup = eventLoopGroup
+        self.eventLoopPreference = .indifferent
     }
     
     public func render(path: String, context: [String: LeafData]) -> EventLoopFuture<ByteBuffer> {
@@ -65,7 +89,7 @@ public final class LeafRenderer {
     }
     
     func render(_ doc: ResolvedDocument, context: [String: LeafData]) throws -> ByteBuffer {
-        var serializer = LeafSerializer(ast: doc.ast, context: context)
+        var serializer = LeafSerializer(ast: doc.ast, context: context, application: application)
         return try serializer.serialize()
     }
     
@@ -140,6 +164,17 @@ public final class LeafRenderer {
                 return buffer
             }
         }
+    }
+    
+    public func with(_ request: Request) -> LeafRenderer {
+        self.eventLoopPreference = .delegate(on: request.eventLoop)
+        return self
+    }
+}
+
+extension Request {
+    public var leaf: LeafRenderer {
+        return self.application.make(LeafRenderer.self).with(self)
     }
 }
 

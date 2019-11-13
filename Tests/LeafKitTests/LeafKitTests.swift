@@ -1,5 +1,6 @@
-import XCTest
 @testable import LeafKit
+import XCTest
+import XCTVapor
 
 extension Array where Element == LeafToken {
     func dropWhitespace() -> Array<LeafToken> {
@@ -856,7 +857,10 @@ final class LeafKitTests: XCTestCase {
         let tokens = try lexer.lex()
         var parser = LeafParser(name: "nested-echo", tokens: tokens)
         let ast = try parser.parse()
-        var serializer = LeafSerializer(ast: ast, context: ["todo": ["title": "Leaf!"]])
+        let app = Application()
+        defer { app.shutdown() }
+        app.provider(LeafProvider())
+        var serializer = LeafSerializer(ast: ast, context: ["todo": ["title": "Leaf!"]], application: app)
         let view = try serializer.serialize()
         XCTAssertEqual(view.string, "Todo: Leaf!")
     }
@@ -866,7 +870,10 @@ final class LeafKitTests: XCTestCase {
         threadPool.start()
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let config = LeafConfig(rootDirectory: templateFolder)
-        let renderer = LeafRenderer(config: config, threadPool: threadPool, eventLoop: group.next())
+        let app = Application()
+        defer { app.shutdown() }
+        app.provider(LeafProvider())
+        let renderer = LeafRenderer(config: config, threadPool: threadPool, application: app, eventLoopGroup: group)
         
         var buffer = try! renderer.render(path: "test", context: [:]).wait()
         let string = buffer.readString(length: buffer.readableBytes)!

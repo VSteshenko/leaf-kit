@@ -1,5 +1,6 @@
-import XCTest
 @testable import LeafKit
+import XCTest
+import XCTVapor
 
 final class SerializerTests: XCTestCase {
     func testComplex() throws {
@@ -26,7 +27,10 @@ final class SerializerTests: XCTestCase {
         let running = LeafData(.string("running"))
         let walking = LeafData(.string("walking"))
         let skills = LeafData(.array([running, walking]))
-        var serializer = LeafSerializer(ast: syntax, context: ["name": name, "skills": skills, "me": me])
+        let app = Application()
+        defer { app.shutdown() }
+        app.provider(LeafProvider())
+        var serializer = LeafSerializer(ast: syntax, context: ["name": name, "skills": skills, "me": me], application: app)
         var serialized = try serializer.serialize()
         let str = serialized.readString(length: serialized.readableBytes) ?? "<err>"
         print(str)
