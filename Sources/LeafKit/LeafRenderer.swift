@@ -1,27 +1,53 @@
 import Vapor
+import NIOConcurrencyHelpers
 
-public struct LeafConfig {
+public struct LeafConfiguration {
     public var rootDirectory: String
     public var customTags: [String: LeafTag]
-    
+
     public init(rootDirectory: String) {
         self.rootDirectory = rootDirectory
         self.customTags = ["lowercased": Lowercased()]
     }
 }
 
-protocol LeafCache {
-    func insert(_ document: ResolvedDocument, on loop: EventLoop) -> EventLoopFuture<ResolvedDocument>
-    func load(path: String, on loop: EventLoop) -> EventLoopFuture<ResolvedDocument?>
+public protocol LeafCache {
+    func insert(
+        _ document: ResolvedDocument,
+        on loop: EventLoop
+    ) -> EventLoopFuture<ResolvedDocument>
+    func load(
+        documentName: String,
+        on loop: EventLoop
+    ) -> EventLoopFuture<ResolvedDocument?>
 }
 
-final class Cache: LeafCache {
-    func insert(_ document: ResolvedDocument, on loop: EventLoop) -> EventLoopFuture<ResolvedDocument> {
+public final class DefaultLeafCache: LeafCache {
+    let lock: Lock
+    var cache: [String: ResolvedDocument]
+
+    public init() {
+        self.lock = .init()
+        self.cache = [:]
+    }
+
+    public func insert(
+        _ document: ResolvedDocument,
+        on loop: EventLoop
+    ) -> EventLoopFuture<ResolvedDocument> {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.cache[document.name] = document
         return loop.makeSucceededFuture(document)
     }
-    
-    func load(path: String, on loop: EventLoop) -> EventLoopFuture<ResolvedDocument?> {
-        return loop.makeSucceededFuture(nil)
+
+    public func load(
+        documentName: String,
+        on loop: EventLoop
+    ) -> EventLoopFuture<ResolvedDocument?> {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return loop.makeSucceededFuture(self.cache[documentName])
     }
 }
 
@@ -29,7 +55,7 @@ public struct LeafContext {
     let params: [ParameterDeclaration]
     let data: [String: LeafData]
     let body: [Syntax]?
-    
+
     public let application: Application
 
     public subscript(key: String) -> LeafData? {
@@ -49,75 +75,63 @@ struct Lowercased: LeafTag {
     }
 }
 
-public class LeafRenderer {
-    let config: LeafConfig
-    let file: NonBlockingFileIO
+public final class LeafRenderer {
+    public let configuration: LeafConfiguration
+    public let cache: LeafCache
+    public let fileio: NonBlockingFileIO
+    public let eventLoop: EventLoop
     public let application: Application
 
-    public var eventLoopPreference: LeafEventLoopPreference
-    public let eventLoopGroup: EventLoopGroup
-    public var eventLoop: EventLoop {
-        switch eventLoopPreference {
-        case let .delegate(on: eventLoop):
-            return eventLoop
-        default:
-            return eventLoopGroup.next()
-        }
+    public init(
+        configuration: LeafConfiguration,
+        cache: LeafCache = DefaultLeafCache(),
+        fileio: NonBlockingFileIO,
+        eventLoop: EventLoop,
+        application: Application
+    ) {
+        self.configuration = configuration
+        self.cache = cache
+        self.fileio = fileio
+        self.eventLoop = eventLoop
+        self.application = application
     }
 
-    // TODO: More Cache Options
-    let cache: LeafCache = Cache()
-    
-    public init(
-        config: LeafConfig,
-        threadPool: NIOThreadPool,
-        application: Application,
-        eventLoopGroup: EventLoopGroup,
-        eventLoopPreference: LeafEventLoopPreference = .indifferent
-    ) {
-        self.config = config
-        self.file = .init(threadPool: threadPool)
-        self.application = application
-        self.eventLoopGroup = eventLoopGroup
-        self.eventLoopPreference = .indifferent
-    }
-    
     public func render(path: String, context: [String: LeafData]) -> EventLoopFuture<ByteBuffer> {
         let expanded = expand(path: path)
         let document = fetch(path: expanded)
         return document.flatMapThrowing { try self.render($0, context: context) }
     }
-    
+
     func render(_ doc: ResolvedDocument, context: [String: LeafData]) throws -> ByteBuffer {
         var serializer = LeafSerializer(ast: doc.ast, context: context, application: application)
         return try serializer.serialize()
     }
-    
+
     private func expand(path: String) -> String {
         var path = path
         // ignore files that already have a type
         if path.split(separator: ".").count < 2, !path.hasSuffix(".leaf") {
             path += ".leaf"
         }
-        
+
         if !path.hasPrefix("/") {
-            path = config.rootDirectory.trailSlash + path
+            path = self.configuration.rootDirectory.trailSlash + path
         }
         return path
     }
-    
+
     private func fetch(path: String) -> EventLoopFuture<ResolvedDocument> {
         let expanded = expand(path: path)
-        return cache.load(path: expanded, on: eventLoop).flatMap { cached in
+        return cache.load(documentName: expanded, on: eventLoop).flatMap { cached in
             guard let cached = cached else { return self.read(file: expanded) }
             return self.eventLoop.makeSucceededFuture(cached)
         }
     }
-    
+
     private func read(file: String) -> EventLoopFuture<ResolvedDocument> {
         print("reading \(file)")
         let raw = readBytes(file: file)
-        
+
         let syntax = raw.flatMapThrowing { raw -> [Syntax] in
             var raw = raw
             guard let template = raw.readString(length: raw.readableBytes) else { return [] }
@@ -126,19 +140,19 @@ public class LeafRenderer {
             var parser = LeafParser(name: file, tokens: tokens)
             return try parser.parse()
         }
-        
+
         return syntax.flatMap { syntax in
             let dependencies = self.readDependencies(syntax.dependencies)
             let resolved = dependencies.flatMapThrowing { dependencies -> ResolvedDocument in
                 let unresolved = UnresolvedDocument(name: file, raw: syntax)
                 let resolver = ExtendResolver(document: unresolved, dependencies: dependencies)
-                return try resolver.resolve(rootDirectory: self.config.rootDirectory)
+                return try resolver.resolve(rootDirectory: self.configuration.rootDirectory)
             }
-            
+
             return resolved.flatMap { resolved in self.cache.insert(resolved, on: self.eventLoop) }
         }
     }
-    
+
     private func readDependencies(_ dependencies: [String]) -> EventLoopFuture<[ResolvedDocument]> {
         let fetchRequests = dependencies.map(self.fetch)
         let results = EventLoopFuture.whenAllComplete(fetchRequests, on: self.eventLoop)
@@ -151,30 +165,19 @@ public class LeafRenderer {
             }
         }
     }
-    
+
     private func readBytes(file: String) -> EventLoopFuture<ByteBuffer> {
-        let openFile = self.file.openFile(path: file, eventLoop: self.eventLoop)
+        let openFile = self.fileio.openFile(path: file, eventLoop: self.eventLoop)
         return openFile.flatMapErrorThrowing { error in
             throw "unable to open file \(file)"
         }.flatMap { (handle, region) -> EventLoopFuture<ByteBuffer> in
             let allocator = ByteBufferAllocator()
-            let read = self.file.read(fileRegion: region, allocator: allocator, eventLoop: self.eventLoop)
+            let read = self.fileio.read(fileRegion: region, allocator: allocator, eventLoop: self.eventLoop)
             return read.flatMapThrowing { (buffer)  in
                 try handle.close()
                 return buffer
             }
         }
-    }
-    
-    public func with(_ request: Request) -> LeafRenderer {
-        self.eventLoopPreference = .delegate(on: request.eventLoop)
-        return self
-    }
-}
-
-extension Request {
-    public var leaf: LeafRenderer {
-        return self.application.make(LeafRenderer.self).with(self)
     }
 }
 
@@ -182,7 +185,7 @@ extension Array where Element == Syntax {
     var dependencies: [String] {
         return extensions.map { $0.key }
     }
-    
+
     private var extensions: [Syntax.Extend] {
         return compactMap {
             switch $0 {

@@ -1,31 +1,76 @@
 import Vapor
 
-public final class LeafProvider: Provider {
-
-    public init() { }
-    
-    public func register(_ app: Application) {
-        app.register(LeafRenderer.self) { app in
-            return LeafRenderer(config: app.make(),
-                                threadPool: app.make(),
-                                application: app,
-                                eventLoopGroup: app.make(),
-                                eventLoopPreference: .indifferent)
-        }
-
-        app.register(ViewRenderer.self) { app in
-            return app.make(LeafRenderer.self)
-        }
-
-        app.register(LeafConfig.self) { app in
-            let directory = app.make(DirectoryConfiguration.self)
-            return LeafConfig(rootDirectory: directory.viewsDirectory)
-        }
+extension Application {
+    public var leaf: Leaf {
+        .init(application: self)
     }
 
+    public struct Leaf {
+        final class Storage {
+            var cache: LeafCache
+
+            init() {
+                self.cache = DefaultLeafCache()
+            }
+        }
+
+        struct Key: StorageKey {
+            typealias Value = Storage
+        }
+
+        public var renderer: LeafRenderer {
+            .init(
+                configuration: .init(
+                    rootDirectory: self.application.directory.viewsDirectory
+                ),
+                cache: self.cache,
+                fileio: self.application.fileio,
+                eventLoop: self.application.eventLoopGroup.next(),
+                application: self.application
+            )
+        }
+
+        public var cache: LeafCache {
+            self.storage.cache
+        }
+
+        var storage: Storage {
+            if let existing = self.application.storage[Key.self] {
+                return existing
+            } else {
+                let new = Storage()
+                self.application.storage[Key.self] = new
+                return new
+            }
+        }
+
+        public let application: Application
+    }
+}
+
+extension Request {
+    var leaf: LeafRenderer {
+        .init(
+            configuration: .init(rootDirectory: self.application.directory.viewsDirectory),
+            cache: self.application.leaf.cache,
+            fileio: self.application.fileio,
+            eventLoop: self.eventLoop,
+            application: self.application
+        )
+    }
 }
 
 extension LeafRenderer: ViewRenderer {
+    public func `for`(_ request: Request) -> ViewRenderer {
+        LeafRenderer(
+            configuration: self.configuration,
+            cache: self.cache,
+            fileio: self.fileio,
+            eventLoop: request.eventLoop,
+            application: self.application
+        )
+    }
+    
     public func render<E>(_ name: String, _ context: E) -> EventLoopFuture<View>
         where E: Encodable
     {
@@ -37,6 +82,16 @@ extension LeafRenderer: ViewRenderer {
         }
         return self.render(path: name, context: data).map { buffer in
             return View(data: buffer)
+        }
+    }
+}
+
+extension Application.Views.Provider {
+    public static var leaf: Self {
+        .init {
+            $0.views.use {
+                $0.leaf.renderer
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
-@testable import LeafKit
 import XCTest
 import XCTVapor
+@testable import LeafKit
 
 extension Array where Element == LeafToken {
     func dropWhitespace() -> Array<LeafToken> {
@@ -857,9 +857,8 @@ final class LeafKitTests: XCTestCase {
         let tokens = try lexer.lex()
         var parser = LeafParser(name: "nested-echo", tokens: tokens)
         let ast = try parser.parse()
-        let app = Application()
+        let app = Application(.testing)
         defer { app.shutdown() }
-        app.provider(LeafProvider())
         var serializer = LeafSerializer(ast: ast, context: ["todo": ["title": "Leaf!"]], application: app)
         let view = try serializer.serialize()
         XCTAssertEqual(view.string, "Todo: Leaf!")
@@ -868,12 +867,12 @@ final class LeafKitTests: XCTestCase {
     func _testRenderer() throws {
         let threadPool = NIOThreadPool(numberOfThreads: 1)
         threadPool.start()
+        let fileio = NonBlockingFileIO(threadPool: threadPool)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let config = LeafConfig(rootDirectory: templateFolder)
-        let app = Application()
+        let config = LeafConfiguration(rootDirectory: templateFolder)
+        let app = Application(.testing)
         defer { app.shutdown() }
-        app.provider(LeafProvider())
-        let renderer = LeafRenderer(config: config, threadPool: threadPool, application: app, eventLoopGroup: group)
+        let renderer = LeafRenderer(configuration: config, fileio: fileio, eventLoop: group.next(), application: app)
         
         var buffer = try! renderer.render(path: "test", context: [:]).wait()
         let string = buffer.readString(length: buffer.readableBytes)!

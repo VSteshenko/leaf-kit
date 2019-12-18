@@ -82,7 +82,7 @@ struct LeafSerializer {
     
     mutating func serialize(_ tag: Syntax.CustomTagDeclaration) throws {
         let sub = LeafContext(params: tag.params, data: data, body: tag.body, application: application)
-        let tags = application.make(LeafConfig.self).customTags
+        let tags = application.leaf.renderer.configuration.customTags
         let rendered = try tags[tag.name]?.render(sub)
             ?? .init(.null)
         serialize(rendered)

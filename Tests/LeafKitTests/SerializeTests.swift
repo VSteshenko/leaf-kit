@@ -29,7 +29,6 @@ final class SerializerTests: XCTestCase {
         let skills = LeafData(.array([running, walking]))
         let app = Application()
         defer { app.shutdown() }
-        app.provider(LeafProvider())
         var serializer = LeafSerializer(ast: syntax, context: ["name": name, "skills": skills, "me": me], application: app)
         var serialized = try serializer.serialize()
         let str = serialized.readString(length: serialized.readableBytes) ?? "<err>"

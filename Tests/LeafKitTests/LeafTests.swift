@@ -422,7 +422,6 @@ private func render(name: String = "test-render", _ template: String, _ context:
     let ast = try parser.parse()
     let app = Application()
     defer { app.shutdown() }
-    app.provider(LeafProvider())
     var serializer = LeafSerializer(ast: ast, context: context, application: app)
     let view = try serializer.serialize()
     return view.getString(at: view.readerIndex, length: view.readableBytes) ?? ""

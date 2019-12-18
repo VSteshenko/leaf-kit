@@ -57,7 +57,7 @@ struct ParameterResolver {
             result = try resolve(param: p)
         case .tag(let t):
             let ctx = LeafContext(params: t.params, data: data, body: t.body, application: application)
-            let tags = application.make(LeafConfig.self).customTags
+            let tags = application.leaf.renderer.configuration.customTags
             result = try tags[t.name]?.render(ctx)
                 ?? .init(.null)
         }

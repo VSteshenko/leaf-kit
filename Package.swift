@@ -1,4 +1,4 @@
-// swift-tools-version:5.0
+// swift-tools-version:5.1
 import PackageDescription
 
 let package = Package(
@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "LeafKit", targets: ["LeafKit"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/vapor/vapor.git", .upToNextMajor(from: "4.0.0-beta.1")),
+        .package(url: "https://github.com/vapor/vapor.git", .upToNextMajor(from: "4.0.0-beta.2.1")),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.2.0"),
     ],
     targets: [
