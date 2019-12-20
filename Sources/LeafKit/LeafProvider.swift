@@ -7,9 +7,11 @@ extension Application {
 
     public struct Leaf {
         final class Storage {
+            var configuration: LeafConfiguration
             var cache: LeafCache
 
-            init() {
+            init(application: Application) {
+                self.configuration = .init(rootDirectory: application.directory.viewsDirectory)
                 self.cache = DefaultLeafCache()
             }
         }
@@ -20,9 +22,18 @@ extension Application {
 
         public var renderer: LeafRenderer {
             .init(
-                configuration: .init(
-                    rootDirectory: self.application.directory.viewsDirectory
-                ),
+                configuration: self.configuration,
+                cache: self.cache,
+                fileio: self.application.fileio,
+                eventLoop: self.application.eventLoopGroup.next(),
+                application: self.application
+            )
+        }
+        
+        public func renderer(configuration: LeafConfiguration) -> LeafRenderer {
+            self.configuration = configuration
+            return .init(
+                configuration: self.configuration,
                 cache: self.cache,
                 fileio: self.application.fileio,
                 eventLoop: self.application.eventLoopGroup.next(),
@@ -30,6 +41,15 @@ extension Application {
             )
         }
 
+        public var configuration: LeafConfiguration {
+            get {
+                self.storage.configuration
+            }
+            nonmutating set {
+                self.storage.configuration = newValue
+            }
+        }
+        
         public var cache: LeafCache {
             self.storage.cache
         }
@@ -38,7 +58,7 @@ extension Application {
             if let existing = self.application.storage[Key.self] {
                 return existing
             } else {
-                let new = Storage()
+                let new = Storage(application: self.application)
                 self.application.storage[Key.self] = new
                 return new
             }
@@ -51,7 +71,7 @@ extension Application {
 extension Request {
     var leaf: LeafRenderer {
         .init(
-            configuration: .init(rootDirectory: self.application.directory.viewsDirectory),
+            configuration: self.application.leaf.configuration,
             cache: self.application.leaf.cache,
             fileio: self.application.fileio,
             eventLoop: self.eventLoop,
@@ -91,6 +111,13 @@ extension Application.Views.Provider {
         .init {
             $0.views.use {
                 $0.leaf.renderer
+            }
+        }
+    }
+    public static func leaf(configuration: LeafConfiguration) -> Self {
+        .init {
+            $0.views.use {
+                $0.leaf.renderer(configuration: configuration)
             }
         }
     }

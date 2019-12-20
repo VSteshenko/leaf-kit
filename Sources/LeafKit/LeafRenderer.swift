@@ -5,9 +5,9 @@ public struct LeafConfiguration {
     public var rootDirectory: String
     public var customTags: [String: LeafTag]
 
-    public init(rootDirectory: String) {
+    public init(rootDirectory: String, tags: [String: LeafTag] = [:]) {
         self.rootDirectory = rootDirectory
-        self.customTags = ["lowercased": Lowercased()]
+        self.customTags = ["lowercased": Lowercased()].merging(tags) { (_, new) in new }
     }
 }
 

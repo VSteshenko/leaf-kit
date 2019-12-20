@@ -1,9 +1,5 @@
 import Vapor
 
-var customTags: [String: LeafTag] = [
-    "lowercased": Lowercased(),
-]
-
 struct LeafSerializer {
     private let ast: [Syntax]
     private var offset: Int
