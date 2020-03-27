@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "leaf-kit",
     platforms: [
-        .macOS(.v10_14)
+        .macOS(.v10_15)
     ],
     products: [
         .library(name: "LeafKit", targets: ["LeafKit"]),

@@ -51,7 +51,12 @@ extension Application {
         }
         
         public var cache: LeafCache {
-            self.storage.cache
+            get {
+                self.storage.cache
+            }
+            nonmutating set {
+                self.storage.cache = newValue
+            }
         }
 
         var storage: Storage {
