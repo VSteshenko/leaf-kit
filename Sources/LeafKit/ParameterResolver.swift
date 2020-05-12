@@ -31,18 +31,11 @@ extension ParameterDeclaration {
     }
 }
 
-extension LeafContext {
-    public func resolve() throws -> [ResolvedParameter] {
-        let resolver = ParameterResolver(params: self.params, data: self.data, application: self.application)
-        let resolved = try resolver.resolve()
-        return resolved
-    }
-}
-
 struct ParameterResolver {
     let params: [ParameterDeclaration]
     let data: [String: LeafData]
-    let application: Application
+    let tags: [String: LeafTag]
+    let userInfo: [AnyHashable: Any]
     
     public func resolve() throws -> [ResolvedParameter] {
         return try params.map(resolve)
@@ -56,9 +49,19 @@ struct ParameterResolver {
         case .parameter(let p):
             result = try resolve(param: p)
         case .tag(let t):
-            let ctx = LeafContext(params: t.params, data: data, body: t.body, application: application)
-            let tags = application.leaf.renderer.configuration.customTags
-            result = try tags[t.name]?.render(ctx)
+            let resolver = ParameterResolver(
+                params: t.params,
+                data: self.data,
+                tags: self.tags,
+                userInfo: self.userInfo
+            )
+            let ctx = try LeafContext(
+                parameters: resolver.resolve().map { $0.result },
+                data: data,
+                body: t.body,
+                userInfo: self.userInfo
+            )
+            result = try self.tags[t.name]?.render(ctx)
                 ?? .init(.null)
         }
         return .init(param: param, result: result)
@@ -141,7 +144,7 @@ struct ParameterResolver {
     private func resolve(op: Operator, rhs: LeafData) throws -> LeafData {
         switch op {
         case .not:
-            let result = rhs.bool ?? false
+            let result = rhs.bool ?? !rhs.isNull
             return .init(.bool(!result))
         default:
             throw "unexpected left hand operator not supported: \(op)"
@@ -153,12 +156,12 @@ struct ParameterResolver {
         case .not:
             throw "single expression operator"
         case .and:
-            let lhs = lhs.bool ?? false
-            let rhs = rhs.bool ?? false
+            let lhs = lhs.bool ?? !lhs.isNull
+            let rhs = rhs.bool ?? !rhs.isNull
             return .init(.bool(lhs && rhs))
         case .or:
-            let lhs = lhs.bool ?? false
-            let rhs = rhs.bool ?? false
+            let lhs = lhs.bool ?? !lhs.isNull
+            let rhs = rhs.bool ?? !rhs.isNull
             return .init(.bool(lhs || rhs))
         case .equals:
             return .init(.bool(lhs == rhs))

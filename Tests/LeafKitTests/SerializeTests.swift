@@ -20,7 +20,7 @@ final class SerializerTests: XCTestCase {
         #endif
         """
         
-        let syntax = try! altParse(input)
+        let syntax = try! parse(input)
         let name = LeafData(.string("vapor"))
         
         let me = LeafData(.string("LOGAN"))
@@ -29,7 +29,7 @@ final class SerializerTests: XCTestCase {
         let skills = LeafData(.array([running, walking]))
         let app = Application()
         defer { app.shutdown() }
-        var serializer = LeafSerializer(ast: syntax, context: ["name": name, "skills": skills, "me": me], application: app)
+        var serializer = LeafSerializer(ast: syntax, context: ["name": name, "skills": skills, "me": me])
         var serialized = try serializer.serialize()
         let str = serialized.readString(length: serialized.readableBytes) ?? "<err>"
         print(str)
@@ -37,5 +37,68 @@ final class SerializerTests: XCTestCase {
 //        let syntax = try! altParse(input)
 //        let output = syntax.map { $0.description } .joined(separator: "\n")
 //        XCTAssertEqual(output, expectation)
+    }
+    
+    func testNestedKeyPathLoop() throws {
+        let input = """
+        #for(person in people):
+        hello #(person.name)
+        #for(skill in person.skills):
+        you're pretty good at #(skill)
+        #endfor
+        #endfor
+        """
+        
+        let syntax = try! parse(input)
+        let people = LeafData(.array([
+            LeafData(.dictionary([
+                "name": "LOGAN",
+                "skills": LeafData(.array([
+                    "running",
+                    "walking"
+                ]))
+            ]))
+        ]))
+        
+        var serializer = LeafSerializer(ast: syntax, context: ["people": people])
+        var serialized = try serializer.serialize()
+        let str = (serialized.readString(length: serialized.readableBytes) ?? "<err>")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        XCTAssertEqual(str, """
+        hello LOGAN
+
+        you're pretty good at running
+
+        you're pretty good at walking
+        """)
+    }
+    
+    func testInvalidNestedKeyPathLoop() throws {
+        let input = """
+        #for(person in people):
+        hello #(person.name)
+        #for(skill in person.profile.skills):
+        you're pretty good at #(skill)
+        #endfor
+        #endfor
+        """
+        
+        let syntax = try! parse(input)
+        let people = LeafData(.array([
+            LeafData(.dictionary([
+                "name": "LOGAN",
+                "skills": LeafData(.array([
+                    "running",
+                    "walking"
+                ]))
+            ]))
+        ]))
+        
+        var serializer = LeafSerializer(ast: syntax, context: ["people": people])
+        
+        XCTAssertThrowsError(try serializer.serialize()) { error in
+            XCTAssertEqual("\(error)", "expected dictionary at key: person.profile")
+        }
     }
 }
