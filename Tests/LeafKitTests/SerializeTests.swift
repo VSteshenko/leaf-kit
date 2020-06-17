@@ -19,10 +19,10 @@ final class SerializerTests: XCTestCase {
         expression resolution worked!!
         #endif
         """
-        
+
         let syntax = try! parse(input)
         let name = LeafData(.string("vapor"))
-        
+
         let me = LeafData(.string("LOGAN"))
         let running = LeafData(.string("running"))
         let walking = LeafData(.string("walking"))
@@ -38,7 +38,7 @@ final class SerializerTests: XCTestCase {
 //        let output = syntax.map { $0.description } .joined(separator: "\n")
 //        XCTAssertEqual(output, expectation)
     }
-    
+
     func testNestedKeyPathLoop() throws {
         let input = """
         #for(person in people):
@@ -48,7 +48,7 @@ final class SerializerTests: XCTestCase {
         #endfor
         #endfor
         """
-        
+
         let syntax = try! parse(input)
         let people = LeafData(.array([
             LeafData(.dictionary([
@@ -59,7 +59,7 @@ final class SerializerTests: XCTestCase {
                 ]))
             ]))
         ]))
-        
+
         var serializer = LeafSerializer(ast: syntax, context: ["people": people])
         var serialized = try serializer.serialize()
         let str = (serialized.readString(length: serialized.readableBytes) ?? "<err>")
@@ -73,7 +73,7 @@ final class SerializerTests: XCTestCase {
         you're pretty good at walking
         """)
     }
-    
+
     func testInvalidNestedKeyPathLoop() throws {
         let input = """
         #for(person in people):
@@ -83,7 +83,7 @@ final class SerializerTests: XCTestCase {
         #endfor
         #endfor
         """
-        
+
         let syntax = try! parse(input)
         let people = LeafData(.array([
             LeafData(.dictionary([
@@ -94,9 +94,9 @@ final class SerializerTests: XCTestCase {
                 ]))
             ]))
         ]))
-        
+
         var serializer = LeafSerializer(ast: syntax, context: ["people": people])
-        
+
         XCTAssertThrowsError(try serializer.serialize()) { error in
             XCTAssertEqual("\(error)", "expected dictionary at key: person.profile")
         }

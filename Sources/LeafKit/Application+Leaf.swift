@@ -1,28 +1,22 @@
 import Vapor
 
+extension Application.Views.Provider {
+    public static var leaf: Self {
+        .init {
+            $0.views.use {
+                $0.leaf.renderer
+            }
+        }
+    }
+}
+
 extension Application {
     public var leaf: Leaf {
         .init(application: self)
     }
 
     public struct Leaf {
-        final class Storage {
-            var cache: LeafCache
-            var configuration: LeafConfiguration?
-            var files: LeafFiles?
-            var tags: [String: LeafTag]
-            var userInfo: [AnyHashable: Any]
-
-            init() {
-                self.cache = DefaultLeafCache()
-                self.tags = LeafKit.defaultTags
-                self.userInfo = [:]
-            }
-        }
-
-        struct Key: StorageKey {
-            typealias Value = Storage
-        }
+        public let application: Application
 
         public var renderer: LeafRenderer {
             var userInfo = self.userInfo
@@ -36,7 +30,7 @@ extension Application {
                 userInfo: userInfo
             )
         }
-        
+
         public var configuration: LeafConfiguration {
             get {
                 self.storage.configuration ?? LeafConfiguration(
@@ -74,7 +68,7 @@ extension Application {
                 self.storage.cache = newValue
             }
         }
-
+        
         public var userInfo: [AnyHashable: Any] {
             get {
                 self.storage.userInfo
@@ -94,22 +88,28 @@ extension Application {
             }
         }
 
-        public let application: Application
+        struct Key: StorageKey {
+            typealias Value = Storage
+        }
+
+        final class Storage {
+            var cache: LeafCache
+            var configuration: LeafConfiguration?
+            var files: LeafFiles?
+            var tags: [String: LeafTag]
+            var userInfo: [AnyHashable: Any]
+
+            init() {
+                self.cache = DefaultLeafCache()
+                self.tags = LeafKit.defaultTags
+                self.userInfo = [:]
+            }
+        }
     }
 }
 
 extension LeafContext {
     public var application: Application? {
         self.userInfo["application"] as? Application
-    }
-}
-
-extension Application.Views.Provider {
-    public static var leaf: Self {
-        .init {
-            $0.views.use {
-                $0.leaf.renderer
-            }
-        }
     }
 }
