@@ -1,3 +1,6 @@
+// MARK: Subject to change prior to 1.0.0 release
+// MARK: -
+
 // MARK: `LeafError` Summary
 
 /// `LeafError` reports errors during the template rendering process, wrapping more specific
@@ -8,6 +11,10 @@
 public struct LeafError: Error {
     /// Possible cases of a LeafError.Reason, with applicable stored values where useful for the type
     public enum Reason {
+        // MARK: Errors related to loading raw templates
+        /// Attempted to access a template blocked for security reasons
+        case illegalAccess(String)
+        
         // MARK: Errors related to LeafCache access
         /// Attempt to modify cache entries when caching is globally disabled
         case cachingDisabled
@@ -65,6 +72,8 @@ public struct LeafError: Error {
         let src = "\(file ?? "?").\(function):\(line)"
 
         switch self.reason {
+            case .illegalAccess(let message):
+                return "\(src) - \(message)"
             case .unknownError(let message):
                 return "\(src) - \(message)"
             case .unsupportedFeature(let feature):
@@ -87,7 +96,7 @@ public struct LeafError: Error {
     }
     
     /// Create a `LeafError` - only `reason` typically used as source locations are auto-grabbed
-    internal init(
+    public init(
         _ reason: Reason,
         file: String = #file,
         function: String = #function,
@@ -105,20 +114,17 @@ public struct LeafError: Error {
 // MARK: - `LexerError` Summary (Wrapped by LeafError)
 
 /// `LexerError` reports errors during the stage.
-///
-/// #TODO
-/// - Remove `invalidTagToken`? Not used anywhere in Leaf-Kit
 public struct LexerError: Error {
+    // MARK: - Public
+    
     public enum Reason {
         // MARK: Errors occuring during Lexing
-        /// To be removed if possible - avoid using
-        case invalidTagToken(Character)
         /// A character not usable in parameters is present when Lexer is not expecting it
         case invalidParameterToken(Character)
         /// A string was opened but never terminated by end of file
         case unterminatedStringLiteral
         /// Use in place of fatalError to indicate extreme issue
-        case internalError(String)
+        case unknownError(String)
     }
     
     /// Template source file line where error occured
@@ -129,8 +135,11 @@ public struct LexerError: Error {
     public let name: String
     /// Stated reason for error
     public let reason: Reason
+    
+    // MARK: - Internal Only
+    
     /// State of tokens already processed by Lexer prior to error
-    public let lexed: [LeafToken]
+    internal let lexed: [LeafToken]
     /// Flag to true if lexing error is something that may be recoverable during parsing;
     /// EG, `"#anhtmlanchor"` may lex as a tag name but fail to tokenize to tag because it isn't
     /// followed by a left paren. Parser may be able to recover by decaying it to `.raw`.

@@ -1,9 +1,13 @@
+// MARK: Subject to change prior to 1.0.0 release
+// MARK: -
+
 @_exported import NIO
 
 /// Various helper identities for convenience
 extension Character {
     // MARK: - Leaf-Kit specific static identities (Public)
     
+    // FIXME: Make .tagIndicatore write-once
     /// Global setting of `tagIndicator` for Leaf-Kit - by default, `#`
     public static var tagIndicator: Character = .octothorpe
     
@@ -13,8 +17,6 @@ extension Character {
         return self.isLowercaseLetter
             || self.isUppercaseLetter
     }
-    
-//    var isAllowedInVariable: - Removed
     
     var isValidInParameter: Bool {
         return self.isValidInTagName
@@ -115,6 +117,4 @@ extension Character {
     static let ampersand = "&".first!
     static let vertical = "|".first!
     static let underscore = "_".first!
-
-    // Various identifiers moved up in extension for clarity
 }

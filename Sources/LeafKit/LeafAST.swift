@@ -1,20 +1,16 @@
-public typealias ResolvedDocument = LeafAST
+// MARK: Subject to change prior to 1.0.0 release
+// MARK: -
 
-// Internal combination of rawAST = nil indicates no external references
-// rawAST non-nil & flat = false : unresolved with external references, and public AST is not flat
-// rawAST non-nil & flat = true : resolved with external references, and public AST is flat
+
+/// `LeafAST` represents a "compiled," grammatically valid Leaf template (which may or may not be fully resolvable or erroring)
 public struct LeafAST: Hashable {
+    // MARK: - Public
+    
     public func hash(into hasher: inout Hasher) { hasher.combine(name) }
     public static func == (lhs: LeafAST, rhs: LeafAST) -> Bool { lhs.name == rhs.name }
 
+    // MARK: - Internal/Private Only
     let name: String
-
-    private var rawAST: [Syntax]?
-
-    private(set) var ast: [Syntax]
-    private(set) var externalRefs = Set<String>()
-    private(set) var unresolvedRefs = Set<String>()
-    private(set) var flat: Bool
 
     init(name: String, ast: [Syntax]) {
         self.name = name
@@ -24,8 +20,8 @@ public struct LeafAST: Hashable {
 
         updateRefs([:])
     }
-
-     init(from: LeafAST, referencing externals: [String: LeafAST]) {
+    
+    init(from: LeafAST, referencing externals: [String: LeafAST]) {
         self.name = from.name
         self.ast = from.ast
         self.rawAST = from.rawAST
@@ -36,6 +32,15 @@ public struct LeafAST: Hashable {
         updateRefs(externals)
     }
 
+    internal private(set) var ast: [Syntax]
+    internal private(set) var externalRefs = Set<String>()
+    internal private(set) var unresolvedRefs = Set<String>()
+    internal private(set) var flat: Bool
+    
+    // MARK: - Private Only
+    
+    private var rawAST: [Syntax]?
+
     mutating private func updateRefs(_ externals: [String: LeafAST]) {
         var firstRun = false
         if rawAST == nil, flat == false { rawAST = ast; firstRun = true }
@@ -44,21 +49,30 @@ public struct LeafAST: Hashable {
 
         // inline provided externals
         while pos < ast.endIndex {
-            switch ast[pos] {
-                case .extend(let e):
-                    let key = e.key
-                    if let insert = externals[key] {
-                        let inlined = e.extend(base: insert.ast)
-                        ast.replaceSubrange(pos...pos, with: inlined)
-                    } else {
-                        unresolvedRefs.insert(key)
-                        pos = ast.index(after: pos)
-                    }
-                default:
-                    var new: Syntax? = nil
-                    unresolvedRefs.formUnion(ast[pos].inlineRefs(externals, &new))
-                    if let new = new { ast[pos] = new }
-                    pos = ast.index(after: pos)
+            // get desired externals for this Syntax - if none, continue
+            let wantedExts = ast[pos].externals()
+            if wantedExts.isEmpty {
+                pos = ast.index(after: pos)
+                continue
+            }
+            // see if we can provide any of them - if not, continue
+            let providedExts = externals.filter { wantedExts.contains($0.key) }
+            if providedExts.isEmpty {
+                unresolvedRefs.formUnion(wantedExts)
+                pos = ast.index(after: pos)
+                continue
+            }
+            
+            // replace the original Syntax with the results of inlining, potentially 1...n
+            let replacementSyntax = ast[pos].inlineRefs(providedExts, [:])
+            ast.replaceSubrange(pos...pos, with: replacementSyntax)
+            // any returned new inlined syntaxes can't be further resolved at this point
+            // but we need to add their unresolvable references to the global set
+            var offset = replacementSyntax.startIndex
+            while offset < replacementSyntax.endIndex {
+                unresolvedRefs.formUnion(ast[pos].externals())
+                offset = replacementSyntax.index(after: offset)
+                pos = ast.index(after: pos)
             }
         }
 

@@ -1,15 +1,43 @@
-// MARK: THIS SECTION MOVED TO Exports.swift
-// MARK: END OF MOVED SECTION
-// MARK: THIS SECTION MOVED TO LeafRawSource.swift
-// MARK: END OF MOVED SECTION
+// MARK: Subject to change prior to 1.0.0 release
+// MARK: -
 
-// MARK: - `LeafLexer` Summary
+// MARK: `LeafLexer` Summary
 
 /// `LeafLexer` is an opaque structure that wraps the lexing logic of Leaf-Kit.
 ///
 /// Initialized with a `LeafRawTemplate` (raw string-providing representation of a file or other source),
 /// used by evaluating with `LeafLexer.lex()` and either erroring or returning `[LeafToken]`
-struct LeafLexer {
+internal struct LeafLexer {
+    // MARK: - Internal Only
+    
+    /// Convenience to initialize `LeafLexer` with a `String`
+    init(name: String, template string: String) {
+        self.name = name
+        self.src = LeafRawTemplate(name: name, src: string)
+        self.state = .raw
+    }
+    
+    /// Init with `LeafRawTemplate`
+    init(name: String, template: LeafRawTemplate) {
+        self.name = name
+        self.src = template
+        self.state = .raw
+    }
+    
+    /// Lex the stored `LeafRawTemplate`
+    /// - Throws: `LexerError`
+    /// - Returns: An array of fully built `LeafTokens`, to then be parsed by `LeafParser`
+    mutating func lex() throws -> [LeafToken] {
+        // FIXME: Adjust to keep lexing if `try` throws a recoverable LexerError
+        while let next = try self.nextToken() {
+            lexed.append(next)
+            offset += 1
+        }
+        return lexed
+    }
+    
+    // MARK: - Private Only
+    
     private enum State {
         /// Parse as raw, until it finds `#` (but consuming escaped `\#`)
         case raw
@@ -34,26 +62,7 @@ struct LeafLexer {
     /// Name of the template (as opposed to file name) - eg if file = "/views/template.leaf", `template`
     private var name: String
     
-    /// Convenience to initialize `LeafLexer` with a `String` instead of a `LeafRawTemplate`
-    init(name: String, template string: String) {
-        self.name = name
-        self.src = .init(name: name, src: string)
-        self.state = .raw
-    }
-    
-    /// Lex the stored `LeafRawTemplate`
-    /// - Throws: `LexerError`
-    /// - Returns: An array of fully built `LeafTokens`, to then be parsed by `LeafParser`
-    mutating func lex() throws -> [LeafToken] {
-        // FIXME: Adjust to keep lexing if `try` throws a recoverable LexerError
-        while let next = try self.nextToken() {
-            lexed.append(next)
-            offset += 1
-        }
-        return lexed
-    }
-    
-    // MARK: - Internal functions actually implementing the Lexer
+    // MARK: - Private - Actual implementation of Lexer
 
     private mutating func nextToken() throws -> LeafToken? {
         // if EOF, return nil - no more to read
@@ -72,9 +81,9 @@ struct LeafLexer {
             case (.body,       _,   _, true,  _):                return lexBodyIndicator()
             /// Ambiguous case  - `#endTagName#` at EOF. Should this result in `tag(tagName),raw(#)`?
             case (.raw,        true,    _,        _,     .none):
-                throw LexerError(.internalError("Unescaped # at EOF"), src: src, lexed: lexed)
+                throw LexerError(.unknownError("Unescaped # at EOF"), src: src, lexed: lexed)
             default:
-                throw LexerError(.internalError("Template cannot be lexed"), src: src, lexed: lexed)
+                throw LexerError(.unknownError("Template cannot be lexed"), src: src, lexed: lexed)
         }
     }
 
@@ -238,7 +247,7 @@ struct LeafLexer {
             if testInt != nil || testDouble != nil {
                 // discard the minus
                 if sign == -1 { self.lexed.removeLast(); offset -= 1 }
-                _ = src.popWhile { $0.isValidInNumeric }
+                src.popWhile { $0.isValidInNumeric }
                 if testInt != nil { return .parameter(.constant(.int(testInt! * sign))) }
                 else { return .parameter(.constant(.double(testDouble! * Double(sign)))) }
             }

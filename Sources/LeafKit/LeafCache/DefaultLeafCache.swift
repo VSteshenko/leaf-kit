@@ -1,28 +1,33 @@
+// MARK: Subject to change prior to 1.0.0 release
+// MARK: -
+
+
 import NIOConcurrencyHelpers
 
-public final class DefaultLeafCache: LeafCache {
-    let lock: Lock
-    var cache: [String: ResolvedDocument]
+public final class DefaultLeafCache: SynchronousLeafCache {
+    // MARK: - Public - `LeafCache` Protocol Conformance
+    
+    /// Global setting for enabling or disabling the cache
     public var isEnabled: Bool = true
-
+    /// Current count of cached documents
+    public var count: Int { self.lock.withLock { cache.count } }
+    
+    /// Initializer
     public init() {
         self.lock = .init()
         self.cache = [:]
     }
 
-    // Superseded by insert with remove: parameter - Remove in Leaf-Kit 2?
+    /// - Parameters:
+    ///   - document: The `LeafAST` to store
+    ///   - loop: `EventLoop` to return futures on
+    ///   - replace: If a document with the same name is already cached, whether to replace or not.
+    /// - Returns: The document provided as an identity return
     public func insert(
-        _ document: ResolvedDocument,
-        on loop: EventLoop
-    ) -> EventLoopFuture<ResolvedDocument> {
-        self.insert(document, on: loop, replace: false)
-    }
-
-    public func insert(
-        _ document: ResolvedDocument,
+        _ document: LeafAST,
         on loop: EventLoop,
         replace: Bool = false
-    ) -> EventLoopFuture<ResolvedDocument> {
+    ) -> EventLoopFuture<LeafAST> {
         // future fails if caching is enabled
         guard isEnabled else { return loop.makeSucceededFuture(document) }
 
@@ -35,17 +40,26 @@ public final class DefaultLeafCache: LeafCache {
         }
         return loop.makeSucceededFuture(document)
     }
-
-    public func load(
+    
+    /// - Parameters:
+    ///   - documentName: Name of the `LeafAST`  to try to return
+    ///   - loop: `EventLoop` to return futures on
+    /// - Returns: `EventLoopFuture<LeafAST?>` holding the `LeafAST` or nil if no matching result
+    public func retrieve(
         documentName: String,
         on loop: EventLoop
-    ) -> EventLoopFuture<ResolvedDocument?> {
+    ) -> EventLoopFuture<LeafAST?> {
         guard isEnabled == true else { return loop.makeSucceededFuture(nil) }
         self.lock.lock()
         defer { self.lock.unlock() }
         return loop.makeSucceededFuture(self.cache[documentName])
     }
 
+    /// - Parameters:
+    ///   - documentName: Name of the `LeafAST`  to try to purge from the cache
+    ///   - loop: `EventLoop` to return futures on
+    /// - Returns: `EventLoopFuture<Bool?>` - If no document exists, returns nil. If removed,
+    ///     returns true. If cache can't remove because of dependencies (not yet possible), returns false.
     public func remove(
         _ documentName: String,
         on loop: EventLoop
@@ -59,10 +73,19 @@ public final class DefaultLeafCache: LeafCache {
         self.cache[documentName] = nil
         return loop.makeSucceededFuture(true)
     }
-
-    public func entryCount() -> Int {
+    
+    // MARK: - Internal Only
+    
+    internal let lock: Lock
+    internal var cache: [String: LeafAST]
+    
+    /// Blocking file load behavior
+    internal func retrieve(documentName: String) throws -> LeafAST? {
+        guard isEnabled == true else { throw LeafError(.cachingDisabled) }
         self.lock.lock()
         defer { self.lock.unlock() }
-        return cache.count
+        let result = self.cache[documentName]
+        guard result != nil else { throw LeafError(.noValueForKey(documentName)) }
+        return result
     }
 }

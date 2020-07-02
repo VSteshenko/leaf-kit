@@ -313,25 +313,6 @@ final class LeafTests: XCTestCase {
         }
     }
 
-    // https://github.com/vapor/leaf/issues/96
-    func testGH96() throws {
-        let template = """
-        #for(name in names):
-            #(name): index=#(index) last=#(isLast) first=#(isFirst)
-        #endfor
-        """
-        let expected = """
-
-            tanner: index=0 last=false first=true
-
-            ziz: index=1 last=false first=false
-
-            vapor: index=2 last=true first=false
-
-        """
-        try XCTAssertEqual(render(template, ["names": ["tanner", "ziz", "vapor"]]), expected)
-    }
-
     func testLoopIndices() throws {
         let template = """
         #for(name in names):
@@ -396,92 +377,7 @@ final class LeafTests: XCTestCase {
 
         try XCTAssertEqual(render(template, ["isFirst": true]), expected)
     }
-
-
-    // https://github.com/vapor/leaf/issues/99
-    func testGH99() throws {
-        let template = """
-        Hi #(first) #(last)
-        """
-        let expected = """
-        Hi Foo Bar
-        """
-        try XCTAssertEqual(render(template, ["first": "Foo", "last": "Bar"]), expected)
-    }
-
-    // https://github.com/vapor/leaf/issues/101
-    func testGH101() throws {
-        let template = """
-        #for(foo in foos):#(index+1):#(foo)#endfor
-        """
-        let expected = "1:A2:B3:C"
-        try XCTAssertEqual(render(template, ["foos": ["A", "B", "C"]]), expected)
-    }
-
-    // https://github.com/vapor/leaf/issues/105
-    func testGH105() throws {
-        do {
-            let template = """
-            #if(1 + 1 == 2):hi#endif
-            """
-            let expected = "hi"
-            try XCTAssertEqual(render(template, ["a": "a"]), expected)
-        }
-        do {
-            let template = """
-            #if(2 == 1 + 1):hi#endif
-            """
-            let expected = "hi"
-            try XCTAssertEqual(render(template, ["a": "a"]), expected)
-        }
-        do {
-            let template = """
-            #if(1 == 1 + 1 || 1 == 2 - 1):hi#endif
-            """
-            let expected = "hi"
-            try XCTAssertEqual(render(template, ["a": "a"]), expected)
-        }
-    }
-
-    // https://github.com/vapor/leaf/issues/127
-    // TODO: This commenting style is not used anymore but needs a replacement
-    func _testGH127Inline() throws {
-        do {
-            let template = """
-            <html>
-            <head>
-            <title></title>#// Translate all copy!!!!!
-            <style>
-            """
-            let expected = """
-            <html>
-            <head>
-            <title></title>
-            <style>
-            """
-            try XCTAssertEqual(render(template, ["a": "a"]), expected)
-        }
-    }
-    // TODO: This commenting style is not used anymore but needs a replacement
-    func _testGH127SingleLine() throws {
-        do {
-            let template = """
-            <html>
-            <head>
-            <title></title>
-            #// Translate all copy!!!!!
-            <style>
-            """
-            let expected = """
-            <html>
-            <head>
-            <title></title>
-            <style>
-            """
-            try XCTAssertEqual(render(template, ["a": "a"]), expected)
-        }
-    }
-
+  
     // Validate parse resolution of negative numbers
     func testNegatives() throws {
         let input = """
@@ -516,9 +412,9 @@ final class LeafTests: XCTestCase {
         """
 
         let syntax = """
-        [variable(index), operator(-), constant(5)]
-        [constant(10), operator(-), constant(5)]
-        [constant(10), operator(-), constant(5)]
+        expression[variable(index), operator(-), constant(5)]
+        expression[constant(10), operator(-), constant(5)]
+        expression[constant(10), operator(-), constant(5)]
         raw("-5")
         """
 
@@ -549,13 +445,13 @@ final class LeafTests: XCTestCase {
         """
 
         let syntax = """
-        [keyword(false), operator(&&), keyword(true)]
-        [keyword(false), operator(||), keyword(true)]
-        [keyword(true), operator(&&), keyword(true)]
-        [keyword(false), operator(||), keyword(false)]
-        [keyword(false), operator(||), keyword(true)]
+        expression[keyword(false), operator(&&), keyword(true)]
+        expression[keyword(false), operator(||), keyword(true)]
+        expression[keyword(true), operator(&&), keyword(true)]
+        expression[keyword(false), operator(||), keyword(false)]
+        expression[keyword(false), operator(||), keyword(true)]
         raw("true")
-        [expression(-5 + [10 - [[20 / 2] + [9 * -3]]]), operator(==), expression([90 / 3] + [2 * -10])]
+        expression[[-5 + [10 - [[20 / 2] + [9 * -3]]]], operator(==), [[90 / 3] + [2 * -10]]]
         """
 
         let expectation = """
@@ -574,17 +470,4 @@ final class LeafTests: XCTestCase {
         XCTAssertEqual(parsed, syntax)
         try XCTAssertEqual(render(input), expectation)
     }
-}
-
-private func render(name: String = "test-render", _ template: String, _ context: [String: LeafData] = [:]) throws -> String {
-    var lexer = LeafLexer(name: name, template: template)
-    let tokens = try lexer.lex()
-    var parser = LeafParser(name: name, tokens: tokens)
-    let ast = try parser.parse()
-    var serializer = LeafSerializer(
-        ast: ast,
-        context: context
-    )
-    let view = try serializer.serialize()
-    return view.getString(at: view.readerIndex, length: view.readableBytes) ?? ""
 }
